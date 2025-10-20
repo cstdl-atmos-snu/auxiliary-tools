@@ -1,2 +1,3 @@
 test.ipynb
+.gitignore
 **/__pycache__/
