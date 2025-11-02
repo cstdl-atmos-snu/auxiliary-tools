@@ -414,3 +414,89 @@ def spectral_analysis(
     ds["power_asym_ratio"] = ds["power_asym_mean"] / power_smooth
 
     return ds
+
+
+def spectral_filtering(
+    da,
+    time_name="time",
+    lon_name="lon",
+    lat_name="lat",
+    hann_days=5,
+    wavenumber_band=(-20, -6),
+    frequency_band=(1 / 5, 1 / 2.5),
+    equivalent_depth_band=(8, 90),
+):
+    """
+    Assuming `da` has a regular time, lat, lon grid, and lat dimension is symmetric about the equator.
+    """
+    dt = da[time_name][1] - da[time_name][0]  # assume regular time axis
+    dlon = da[lon_name][1] - da[lon_name][0]  # assume regular lon axis
+    samples_per_day = np.timedelta64(1, "D") / dt.values
+    samples_per_lon = 360.0 / dlon.values
+
+    nt = da.sizes[time_name]
+    nlon = da.sizes[lon_name]
+    nlat = da.sizes[lat_name]
+
+    hann_width = int(hann_days * samples_per_day)
+
+    # symmetric and asymmetric array
+    da = da.transpose(time_name, lat_name, lon_name).sortby(lat_name)
+
+    # detrend along time axis
+    linear_trend = da.polyfit(dim=time_name, deg=1)
+    da = da - xr.polyval(
+        da[time_name], linear_trend["polyfit_coefficients"]
+    )  # linear trend
+
+    # apply Hann window along time_name axis
+    hann_window = np.concatenate(
+        (
+            np.hanning(hann_width)[: hann_width // 2],
+            np.ones(da.sizes[time_name] - hann_width),
+            np.hanning(hann_width)[hann_width // 2 :],
+        ),
+        axis=0,
+    )
+    hann_window = xr.DataArray(
+        hann_window,
+        coords={time_name: da[time_name]},
+        dims=[time_name],
+    )
+    windowed = da * hann_window
+    windowed = windowed.transpose(lat_name, time_name, lon_name)
+
+    # fourier transform along time_name and lon axes
+    freq = fft.fftfreq(nt, d=1 / samples_per_day)
+    wavenum = -fft.fftfreq(nlon, d=1 / samples_per_lon)
+    fft2d_windowed = xr.DataArray(
+        np.fft.fft2(windowed),
+        coords={
+            lat_name: windowed[lat_name],
+            "freq": freq,
+            "wavenum": wavenum,
+        },
+        dims=[lat_name, "freq", "wavenum"],
+    )
+
+    # filtering
+    filtered = fft2d_windowed.where(
+        (fft2d_windowed["wavenum"] >= wavenumber_band[0])
+        & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
+        & (fft2d_windowed["freq"] >= frequency_band[0])
+        & (fft2d_windowed["freq"] <= frequency_band[1]),
+        0,
+    )
+
+    # inverse fourier transform
+    ifft2d = xr.DataArray(
+        np.fft.ifft2(filtered.values).real,
+        coords={
+            lat_name: windowed[lat_name],
+            time_name: windowed[time_name],
+            lon_name: windowed[lon_name],
+        },
+        dims=[lat_name, time_name, lon_name],
+    ).transpose(time_name, lat_name, lon_name)
+
+    return ifft2d
