@@ -422,12 +422,14 @@ def spectral_filtering(
     lon_name="lon",
     lat_name="lat",
     hann_days=5,
-    wavenumber_band=(-20, -6),
-    frequency_band=(1 / 5, 1 / 2.5),
+    wave_type="MJO",
+    wavenumber_band=(0, 9),
+    frequency_band=(1 / 96, 1 / 30),
     equivalent_depth_band=(8, 90),
 ):
     """
     Assuming `da` has a regular time, lat, lon grid, and lat dimension is symmetric about the equator.
+    wave_type: "MJO", "Kelvin", "ER", "MRG", "TD-type"
     """
     dt = da[time_name][1] - da[time_name][0]  # assume regular time axis
     dlon = da[lon_name][1] - da[lon_name][0]  # assume regular lon axis
@@ -480,13 +482,103 @@ def spectral_filtering(
     )
 
     # filtering
-    filtered = fft2d_windowed.where(
-        (fft2d_windowed["wavenum"] >= wavenumber_band[0])
-        & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
-        & (fft2d_windowed["freq"] >= frequency_band[0])
-        & (fft2d_windowed["freq"] <= frequency_band[1]),
-        0,
-    )
+    beta = 2.3e-11
+    Re = 6.371e6  # Earth's radius in meters
+    g = 9.81  # gravitational acceleration in m/s^2
+
+    c0 = np.sqrt(g * equivalent_depth_band[0])
+    c1 = np.sqrt(g * equivalent_depth_band[1])
+    k_to_star_0 = np.sqrt(c0 / beta) / Re
+    k_to_star_1 = np.sqrt(c1 / beta) / Re
+    w_to_star_0 = 1 / np.sqrt(c0 * beta)
+    w_to_star_1 = 1 / np.sqrt(c1 * beta)
+    seconds_per_cycle = 86400 / (2 * np.pi)
+
+    if wave_type == "MJO":
+        filtered = fft2d_windowed.where(
+            (fft2d_windowed["wavenum"] >= wavenumber_band[0])
+            & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
+            & (fft2d_windowed["freq"] >= frequency_band[0])
+            & (fft2d_windowed["freq"] <= frequency_band[1]),
+            0,
+        )
+    elif wave_type == "Kelvin":
+        depth_lower_bound = (
+            fft2d_windowed["wavenum"] * k_to_star_0 / w_to_star_0 * seconds_per_cycle
+        )
+        depth_upper_bound = (
+            fft2d_windowed["wavenum"] * k_to_star_1 / w_to_star_1 * seconds_per_cycle
+        )
+        filtered = fft2d_windowed.where(
+            (fft2d_windowed["wavenum"] >= wavenumber_band[0])
+            & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
+            & (fft2d_windowed["freq"] >= frequency_band[0])
+            & (fft2d_windowed["freq"] <= frequency_band[1])
+            & (fft2d_windowed["freq"] >= depth_lower_bound)
+            & (fft2d_windowed["freq"] <= depth_upper_bound),
+            0,
+        )
+    elif wave_type == "ER":
+        n = 1
+        depth_lower_bound = (
+            (
+                -(fft2d_windowed["wavenum"] * k_to_star_0)
+                / ((fft2d_windowed["wavenum"] * k_to_star_0) ** 2 + (2 * n + 1))
+            )
+            / w_to_star_0
+            * seconds_per_cycle
+        )
+        depth_upper_bound = (
+            (
+                -(fft2d_windowed["wavenum"] * k_to_star_1)
+                / ((fft2d_windowed["wavenum"] * k_to_star_1) ** 2 + (2 * n + 1))
+            )
+            / w_to_star_1
+            * seconds_per_cycle
+        )
+        filtered = fft2d_windowed.where(
+            (fft2d_windowed["wavenum"] >= wavenumber_band[0])
+            & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
+            & (fft2d_windowed["freq"] >= frequency_band[0])
+            & (fft2d_windowed["freq"] <= frequency_band[1])
+            & (fft2d_windowed["freq"] >= depth_lower_bound)
+            & (fft2d_windowed["freq"] <= depth_upper_bound),
+            0,
+        )
+    elif wave_type == "MRG":
+        depth_lower_bound = (
+            (
+                fft2d_windowed["wavenum"] * k_to_star_0 / 2
+                + np.sqrt((fft2d_windowed["wavenum"] * k_to_star_0 / 2) ** 2 + 1)
+            )
+            / w_to_star_0
+            * seconds_per_cycle
+        )
+        depth_upper_bound = (
+            (
+                fft2d_windowed["wavenum"] * k_to_star_1 / 2
+                + np.sqrt((fft2d_windowed["wavenum"] * k_to_star_1 / 2) ** 2 + 1)
+            )
+            / w_to_star_1
+            * seconds_per_cycle
+        )
+        filtered = fft2d_windowed.where(
+            (fft2d_windowed["wavenum"] >= wavenumber_band[0])
+            & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
+            & (fft2d_windowed["freq"] >= frequency_band[0])
+            & (fft2d_windowed["freq"] <= frequency_band[1])
+            & (fft2d_windowed["freq"] >= depth_lower_bound)
+            & (fft2d_windowed["freq"] <= depth_upper_bound),
+            0,
+        )
+    elif wave_type == "TD-type":
+        filtered = fft2d_windowed.where(
+            (fft2d_windowed["wavenum"] >= wavenumber_band[0])
+            & (fft2d_windowed["wavenum"] <= wavenumber_band[1])
+            & (fft2d_windowed["freq"] >= frequency_band[0])
+            & (fft2d_windowed["freq"] <= frequency_band[1]),
+            0,
+        )
 
     # inverse fourier transform
     ifft2d = xr.DataArray(
