@@ -1,17 +1,11 @@
 import numpy as np
 import xarray as xr
 import scipy.fft as fft
-import sys
-import os
 
-# Append the parent directory to the system path
-parent_dir = os.path.join(os.path.dirname(__file__), "..")
-sys.path.append(parent_dir)
-
-import constants
+from .. import constants
 
 Re = constants.Re
-g = constants.g
+omega = constants.omega
 
 
 def haversine_distance(point1, point2):
@@ -19,65 +13,28 @@ def haversine_distance(point1, point2):
     Calculate the distance between point1 and point2 using the Haversine formula.
 
     Parameters:
-    - point1, point2: Tuples or arrays representing (latitude, longitude).
-      There are three cases:
-        1) Both point1 and point2 are single points: returns the distance (a scalar).
-        2) One of the points is an array of points: returns an array of distances.
-        3) Both points are arrays (point1 has m points and point2 has n points):
-           returns a distance matrix of size (m, n).
+    - point1, point2: Tuples or arrays representing (longitude, latitude).
 
     The function handles the reshaping of points and conversion from degrees to radians.
     """
 
-    point1 = np.squeeze(np.asarray(point1))
-    point2 = np.squeeze(np.asarray(point2))
-
-    single_point1 = point1.ndim == 1
-    single_point2 = point2.ndim == 1
-
-    if single_point1 and single_point2:
-        point1 = point1.reshape(1, -1)
-        point2 = point2.reshape(1, -1)
-    elif single_point1:
-        point1 = np.tile(point1, (len(point2), 1))
-    elif single_point2:
-        point2 = np.tile(point2, (len(point1), 1))
-    else:
-        return distance_matrix_haver(point1, point2)
-
-    lat1, lon1 = point1[:, 0], point1[:, 1]
-    lat2, lon2 = point2[:, 0], point2[:, 1]
-
-    # Convert latitude and longitude to radians
-    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
+    lon1_rad, lat1_rad, lon2_rad, lat2_rad = np.radians(
+        [point1[0], point1[1], point2[0], point2[1]]
+    )
 
     # Haversine formula
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+    a = (
+        np.sin(dlat / 2) ** 2
+        + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
+    )
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a + 1e-10))
 
     # Calculate the distance
     distance = Re * c
 
     return distance
-
-
-def distance_matrix_haver(point1, point2):
-    point1 = np.squeeze(np.asarray(point1))
-    point2 = np.squeeze(np.asarray(point2))
-
-    single_point1 = point1.ndim == 1
-    single_point2 = point2.ndim == 1
-
-    if single_point1 and single_point2:
-        point1 = point1.reshape(1, -1)
-        point2 = point2.reshape(1, -1)
-
-    dist_matrix = np.zeros((len(point1), len(point2)))
-    for i, point1 in enumerate(point1):
-        dist_matrix[i, :] = haversine_distance(point1, point2)
-    return dist_matrix
 
 
 def dx_to_dlon(dx, lat):
@@ -89,8 +46,8 @@ def dy_to_dlat(dy):
 
 
 # Function to calculate a point given latitude, longitude, bearing, and distance
-def calculate_point(lat, lon, bearing, distance):
-    lat, lon, bearing = np.radians([lat, lon, bearing])
+def calculate_point(lon, lat, bearing, distance):
+    lon, lat, bearing = np.radians([lon, lat, bearing])
     new_lat = np.arcsin(
         np.sin(lat) * np.cos(distance / Re)
         + np.cos(lat) * np.sin(distance / Re) * np.cos(bearing)
@@ -103,12 +60,12 @@ def calculate_point(lat, lon, bearing, distance):
 
 
 # Function to generate concentric circles
-def concentric_circles(center_lat, center_lon, distances, bearing):
+def concentric_circles(center_lon, center_lat, distances, bearing):
     circles = {}
     for distance in distances:
         circle_points = []
         for i_b in bearing:
-            point = calculate_point(center_lat, center_lon, i_b, distance)
+            point = calculate_point(center_lon, center_lat, i_b, distance)
             circle_points.append(point)
         circles[distance] = circle_points
     return circles
@@ -155,33 +112,6 @@ def rolling_sum_np(np_array, win_size=(41, 41), doLonPad=False):
 
     data_bar = np.nansum(data_bar, axis=0)
     return data_bar
-
-
-def column_integral(data_array):
-    """
-    Compute the vertical column integral of an xarray DataArray using the midpoint method.
-
-    Parameters:
-        data_array (xarray.DataArray): The input data array which must have a vertical coordinate
-                                       named "level" (in hPa).
-
-    Returns:
-        xarray.DataArray: The column-integrated value.
-    """
-
-    # Calculate pressure differences between levels in Pa (1 hPa = 100 Pa)
-    dp = data_array["level"].diff(dim="level") * 100
-
-    # Compute the difference of the data values along the vertical dimension
-    dvalue = data_array.diff(dim="level")
-
-    # Estimate the midpoint values using the adjacent differences
-    mid_value = data_array - 0.5 * dvalue
-
-    # Compute the column integral by summing over the 'level' dimension
-    integral = (mid_value * dp).sum(dim="level") / g
-
-    return integral
 
 
 def dx_central(data_array, doLonPad=False):
@@ -265,3 +195,14 @@ def dy_central(data_array):
     derivative = dvalue / (2 * dy)
 
     return derivative
+
+
+def f(latitude):
+    """
+    Compute the Coriolis parameter (f) at a given latitude.
+    f = 2 * omega * sin(latitude)
+    parameters:
+        latitude (xarray.DataArray): Latitude values (in degrees)
+    """
+    f = 2 * omega * np.sin(np.deg2rad(latitude))
+    return f
