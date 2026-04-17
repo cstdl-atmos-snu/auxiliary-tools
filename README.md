@@ -9,11 +9,11 @@
 - [tcpyPI](https://github.com/dgilford/tcpypi) (for TC_related).
 - [MetPy](https://unidata.github.io/MetPy/latest/index.html) (for TC_related).
 
-The prerequisites can readily be installed using the `conda` package manager:
+The prerequisites can be installed using the `conda` package manager:
 
 ```
-conda create -n cstdl_snu 
+conda create -n cstdl_snu -y
 conda activate cstdl_snu
-conda install -c conda-forge numpy scipy xarray dask netCDF4 bottleneck metpy
+conda install -c conda-forge numpy scipy xarray dask netCDF4 bottleneck metpy -y
 pip install tcpypi
 ```
