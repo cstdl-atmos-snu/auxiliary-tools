@@ -34,6 +34,34 @@ def column_integral(data_array):
     return integral
 
 
+def omega(divergence):
+    """
+    Compute omega from divergence.
+
+    Parameters:
+        divergence (xarray.DataArray): The input divergence array which must have a vertical coordinate
+                                       named "level" (in hPa).
+
+    Returns:
+        xarray.DataArray: The computed omega values.
+    """
+    div_sorted = divergence.sortby("level", ascending=True)
+
+    # Calculate pressure differences between levels in Pa (1 hPa = 100 Pa)
+    dp = np.abs(div_sorted["level"].diff(dim="level") * 100)
+
+    # Compute the difference of the data values along the vertical dimension
+    dvalue = div_sorted.diff(dim="level")
+
+    # Estimate the midpoint values using the adjacent differences
+    mid_value = div_sorted - 0.5 * dvalue
+
+    # Compute the column integral by summing over the 'level' dimension
+    omega = (-mid_value * dp).cumsum(dim="level")
+
+    return omega
+
+
 def interpolate_to_height(z_prof, var_prof, z_target):
     """
     Interpolate a vertical profile of a variable to a specific height using linear interpolation/extrapolation.

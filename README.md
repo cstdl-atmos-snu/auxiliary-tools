@@ -10,6 +10,6 @@
 The prerequisites can readily be installed using the `conda` package manager:
 
 ```
-conda create -n cstdl_snu -c conda-forge numpy scipy xarray dask netCDF4 bottleneck
+conda create -n cstdl_snu -c conda-forge numpy scipy xarray dask netCDF4 bottleneck tcpyPI MetPy
 conda activate cstdl_snu
 ```
