@@ -37,6 +37,14 @@ def haversine_distance(point1, point2):
     return distance
 
 
+def dlon_to_dx(dlon, lat):
+    return np.deg2rad(dlon) * np.cos(np.deg2rad(lat)) * Re
+
+
+def dlat_to_dy(dlat):
+    return np.deg2rad(dlat) * Re
+
+
 def dx_to_dlon(dx, lat):
     return dx * 360 / (2 * np.pi * Re * np.cos(np.deg2rad(lat)))
 
@@ -174,7 +182,7 @@ def dy_central(data_array):
         data (xarray.DataArray): The input data array with "latitude" coordinates.
 
     Returns:
-        xarray.DataArray: The computed zonal derivative (df/dy) of the input data.
+        xarray.DataArray: The computed meridional derivative (df/dy) of the input data.
     """
 
     # Compute the difference in longitude (assumes uniform spacing)
@@ -195,6 +203,38 @@ def dy_central(data_array):
     derivative = dvalue / (2 * dy)
 
     return derivative
+
+
+def vorticity(u, v, doLonPad=False):
+    """
+    Compute the relative vorticity (zeta) from the zonal (u) and meridional (v) wind components.
+    zeta = dv/dx - du/dy
+    parameters:
+        u (xarray.DataArray): Zonal wind component with "longitude" and "latitude" coordinates.
+        v (xarray.DataArray): Meridional wind component with "longitude" and "latitude" coordinates.
+        doLonPad (bool): If True, apply periodic boundary conditions in the longitude direction.
+                         If False, use forward/backward differences at the boundaries. Defaults to False.
+    """
+    dv_dx = dx_central(v, doLonPad=doLonPad)
+    du_dy = dy_central(u)
+    zeta = dv_dx - du_dy
+    return zeta
+
+
+def divergence(u, v, doLonPad=False):
+    """
+    Compute the divergence from the zonal (u) and meridional (v) wind components.
+    divergence = du/dx + dv/dy
+    parameters:
+        u (xarray.DataArray): Zonal wind component with "longitude" and "latitude" coordinates.
+        v (xarray.DataArray): Meridional wind component with "longitude" and "latitude" coordinates.
+        doLonPad (bool): If True, apply periodic boundary conditions in the longitude direction.
+                         If False, use forward/backward differences at the boundaries. Defaults to False.
+    """
+    du_dx = dx_central(u, doLonPad=doLonPad)
+    dv_dy = dy_central(v)
+    divergence = du_dx + dv_dy
+    return divergence
 
 
 def f(latitude):
