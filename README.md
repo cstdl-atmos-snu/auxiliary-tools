@@ -6,6 +6,8 @@
 - [NumPy](https://numpy.org/).
 - [SciPy](https://scipy.org/).
 - [Xarray](https://docs.xarray.dev/en/stable/).
+- [tcpyPI](https://github.com/dgilford/tcpypi) (for TC_related).
+- [MetPy](https://unidata.github.io/MetPy/latest/index.html) (for TC_related).
 
 The prerequisites can readily be installed using the `conda` package manager:
 
